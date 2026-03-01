@@ -31,8 +31,7 @@ A Streamlit-based AI assistant that integrates with Google Calendar to create an
 
 Smart-Timetable-AI/
 │
-├── main.py  
-├── requirements.txt  
+├── main.py    
 ├── .gitignore  
 └── README.md  
 
