@@ -9,12 +9,28 @@ import pandas as pd
 SCOPES = ['https://www.googleapis.com/auth/calendar']
 
 # ---------- AUTH ----------
+
 creds = None
 
-if os.path.exists('token.json'):
-    creds = Credentials.from_authorized_user_file('token.json', SCOPES)
+# 1️⃣ Agar Streamlit Cloud secrets me token hai
+if "google_token" in st.secrets:
 
-if not creds or not creds.valid:
+    creds = Credentials(
+        token=st.secrets["google_token"]["token"],
+        refresh_token=st.secrets["google_token"]["refresh_token"],
+        token_uri=st.secrets["google_token"]["token_uri"],
+        client_id=st.secrets["google_token"]["client_id"],
+        client_secret=st.secrets["google_token"]["client_secret"],
+        scopes=SCOPES,
+    )
+
+# 2️⃣ Agar local machine me token.json hai
+elif os.path.exists("token.json"):
+
+    creds = Credentials.from_authorized_user_file("token.json", SCOPES)
+
+# 3️⃣ Agar login first time ho raha hai
+else:
 
     flow = InstalledAppFlow.from_client_config(
         st.secrets["credentials"], SCOPES
@@ -22,13 +38,13 @@ if not creds or not creds.valid:
 
     creds = flow.run_local_server(port=0)
 
-
-    with open('token.json', 'w') as token:
+    with open("token.json", "w") as token:
         token.write(creds.to_json())
 
-service = build('calendar', 'v3', credentials=creds)
 
-st.title("📅 Smart Timetable AI Agent")
+# ---------- GOOGLE CALENDAR SERVICE ----------
+
+service = build("calendar", "v3", credentials=creds)
 
 # ==================================================
 # FUNCTION → GET EVENTS
