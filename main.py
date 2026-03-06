@@ -16,10 +16,7 @@ if os.path.exists('token.json'):
 
 if not creds or not creds.valid:
     flow = InstalledAppFlow.from_client_config(st.secrets["credentials"], SCOPES)
-    creds = flow.run_local_server(
-        port=0,
-        success_message="Login successful! You can close this tab and return to the Smart Timetable app."
-    )
+    creds = flow.run_local_server(port=0)
 
     with open('token.json', 'w') as token:
         token.write(creds.to_json())
