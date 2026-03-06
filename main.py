@@ -5,6 +5,8 @@ from googleapiclient.discovery import build
 import os
 from datetime import datetime, timedelta
 import pandas as pd
+from zoneinfo import ZoneInfo
+
 
 SCOPES = ['https://www.googleapis.com/auth/calendar']
 
@@ -156,12 +158,20 @@ if st.button("Add Event"):
     start_datetime = datetime.combine(
         date,
         datetime.min.time()
-    ).replace(hour=start_hour24, minute=start_min).astimezone()
+    ).replace(
+        hour=start_hour24,
+        minute=start_min,
+        tzinfo=ZoneInfo("Asia/Kolkata")
+    )
 
     end_datetime = datetime.combine(
         date,
         datetime.min.time()
-    ).replace(hour=end_hour24, minute=end_min).astimezone()
+    ).replace(
+        hour=end_hour24,
+        minute=end_min,
+        tzinfo=ZoneInfo("Asia/Kolkata")
+    )
 
     if not title:
         st.error("Enter event title")
