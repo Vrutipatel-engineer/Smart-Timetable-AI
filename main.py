@@ -6,6 +6,7 @@ import os
 from datetime import datetime, timedelta
 import pandas as pd
 from zoneinfo import ZoneInfo
+import json
 
 
 SCOPES = ['https://www.googleapis.com/auth/calendar']
@@ -47,6 +48,26 @@ else:
 # ---------- GOOGLE CALENDAR SERVICE ----------
 
 service = build("calendar", "v3", credentials=creds)
+
+
+# ==================================================
+# CLASS SCHEDULE STORAGE
+# ==================================================
+
+def load_schedule():
+
+    if os.path.exists("schedule.json"):
+        with open("schedule.json", "r") as f:
+            return json.load(f)
+
+    return []
+
+
+def save_schedule(data):
+
+    with open("schedule.json", "w") as f:
+        json.dump(data, f, indent=4)
+
 
 # ==================================================
 # FUNCTION → GET EVENTS
@@ -175,61 +196,140 @@ if st.button("Add Event"):
 
     if not title:
         st.error("Enter event title")
+        st.stop()
+
+    elif start_hour24 < 8 or end_hour24 > 20:
+        st.error("Events allowed only between 8 AM and 8 PM")
+        st.stop()
 
     elif end_datetime <= start_datetime:
         st.error("End time must be after start time")
+        st.stop()
+
+    # Check class schedule conflict
+    schedule = load_schedule()
+
+    event_day = date.strftime("%A")
+
+    for c in schedule:
+
+        if c["day"] == event_day:
+
+            class_start = datetime.strptime(c["start"], "%H:%M").time()
+            class_end = datetime.strptime(c["end"], "%H:%M").time()
+
+            event_start = start_datetime.time()
+            event_end = end_datetime.time()
+
+            if event_start < class_end and event_end > class_start:
+
+                st.error(f"❌ Conflict with class: {c['subject']}")
+                st.stop()
+
+
+    # Calendar conflict check
+    events_result = service.events().list(
+        calendarId='primary',
+        timeMin=start_datetime.isoformat(),
+        timeMax=end_datetime.isoformat(),
+        singleEvents=True
+    ).execute()
+
+    events = events_result.get('items', [])
+
+    if events:
+
+        st.warning("⚠ Time conflict detected")
+
+        required_duration = end_datetime - start_datetime
+        suggestions = suggest_free_slot(date, required_duration)
+
+        if suggestions:
+
+            st.info("Suggested Free Slots:")
+
+            for slot in suggestions[:3]:
+
+                start = slot[0].strftime("%I:%M %p")
+                end = slot[1].strftime("%I:%M %p")
+
+                st.write(f"🟢 {start} - {end}")
 
     else:
 
-        events_result = service.events().list(
+        event = {
+            'summary': title,
+            'start': {
+                'dateTime': start_datetime.isoformat(),
+                'timeZone': 'Asia/Kolkata',
+            },
+            'end': {
+                'dateTime': end_datetime.isoformat(),
+                'timeZone': 'Asia/Kolkata',
+            },
+        }
+
+        service.events().insert(
             calendarId='primary',
-            timeMin=start_datetime.isoformat(),
-            timeMax=end_datetime.isoformat(),
-            singleEvents=True
+            body=event
         ).execute()
 
-        events = events_result.get('items', [])
+        st.success("✅ Event Created Successfully!")
 
-        if events:
+        st.rerun()
 
-            st.warning("⚠ Time conflict detected")
+# ==================================================
+# CLASS SCHEDULE MANAGEMENT
+# ==================================================
 
-            required_duration = end_datetime - start_datetime
-            suggestions = suggest_free_slot(date, required_duration)
+st.header("📚 Class Schedule Management")
 
-            if suggestions:
+schedule = load_schedule()
 
-                st.info("Suggested Free Slots:")
+day = st.selectbox(
+    "Day",
+    ["Monday","Tuesday","Wednesday","Thursday","Friday","Saturday","Sunday"]
+)
 
-                for slot in suggestions[:3]:
+subject = st.text_input("Subject")
 
-                    start = slot[0].strftime("%I:%M %p")
-                    end = slot[1].strftime("%I:%M %p")
+colA, colB = st.columns(2)
 
-                    st.write(f"🟢 {start} - {end}")
+class_start = colA.time_input("Class Start Time")
+class_end = colB.time_input("Class End Time")
 
-        else:
+if st.button("Add Class"):
 
-            event = {
-                'summary': title,
-                'start': {
-                    'dateTime': start_datetime.isoformat(),
-                    'timeZone': 'Asia/Kolkata',
-                },
-                'end': {
-                    'dateTime': end_datetime.isoformat(),
-                    'timeZone': 'Asia/Kolkata',
-                },
-            }
+    new_class = {
+        "day": day,
+        "subject": subject,
+        "start": class_start.strftime("%H:%M"),
+        "end": class_end.strftime("%H:%M")
+    }
 
-            service.events().insert(
-                calendarId='primary',
-                body=event
-            ).execute()
+    schedule.append(new_class)
 
-            st.success("✅ Event Created Successfully!")
+    save_schedule(schedule)
 
-            st.rerun()
+    st.success("Class added successfully")
+
+if schedule:
+
+    st.subheader("Weekly Classes")
+
+    class_data = []
+
+    for c in schedule:
+
+        class_data.append({
+            "Day": c["day"],
+            "Subject": c["subject"],
+            "Start": c["start"],
+            "End": c["end"]
+        })
+
+    st.table(pd.DataFrame(class_data))
+
 
 # ==================================================
 # SHOW EVENTS
