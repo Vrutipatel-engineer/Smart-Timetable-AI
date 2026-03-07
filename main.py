@@ -198,10 +198,6 @@ if st.button("Add Event"):
         st.error("Enter event title")
         st.stop()
 
-    elif start_hour24 < 8 or end_hour24 > 20:
-        st.error("Events allowed only between 8 AM and 8 PM")
-        st.stop()
-
     elif end_datetime <= start_datetime:
         st.error("End time must be after start time")
         st.stop()
