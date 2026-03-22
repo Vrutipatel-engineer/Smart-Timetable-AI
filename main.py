@@ -120,7 +120,7 @@ def parse_user_input(user_input):
 
     Now convert:
     "{user_input}"
-    """
+    
 
     return ask_groq(prompt)
 
