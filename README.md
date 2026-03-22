@@ -1,29 +1,29 @@
-# Smart-Timetable-AI
-Smart Timetable assistant AI
 # 📅 Smart Timetable AI Agent
 
-A Streamlit-based AI assistant that integrates with Google Calendar to create and manage timetable events.
+An AI-powered smart scheduling assistant built using Streamlit and Google Calendar API.
 
 ---
 
-## 🚀 Week 1 Completion
+## 🚀 Features
 
-✔ Google Calendar API Integrated  
-✔ OAuth Authentication Implemented  
-✔ Streamlit UI Developed  
-✔ Event Creation Working  
-✔ Upcoming Events Display Working  
-✔ Time Validation Added  
-✔ Secure Repository (No Secret Files Uploaded)
+✔ Create Google Calendar Events (Manual + AI)
+✔ View Upcoming Events
+✔ Delete Events
+✔ Conflict Detection
+✔ Free Slot Suggestions
+✔ Confirmation System (Yes/No)
+✔ Email & Popup Reminders
+✔ Class Schedule Management
 
 ---
 
 ## 🛠️ Tech Stack
 
-- Python  
-- Streamlit  
-- Google Calendar API  
-- OAuth 2.0  
+* Python
+* Streamlit
+* Google Calendar API
+* OAuth 2.0
+* Groq API
 
 ---
 
@@ -31,87 +31,60 @@ A Streamlit-based AI assistant that integrates with Google Calendar to create an
 
 Smart-Timetable-AI/
 │
-├── main.py    
-├── .gitignore  
-└── README.md  
+├── .devcontainer/
+├── .streamlit/
+├── .gitignore
+├── main.py
+├── README.md
+├── requirements.txt\
 
 ---
 
 ## 🔐 Security Information
 
-The following files are NOT included in this repository:
+The following files contain sensitive data and should NOT be shared publicly:
 
-- credentials.json  
-- token.json  
+* credentials.json
+* token.json
+* .env
+* secret.toml
 
-Reason:
-These files contain sensitive Google OAuth credentials and tokens.
-Uploading them to GitHub can expose security risks.
-They are excluded using `.gitignore`.
-
-Each user must generate their own credentials to run the project.
+Make sure these files are added to `.gitignore` before pushing to GitHub.
 
 ---
 
-## ⚙️ Complete Setup Guide
+## ⚙️ Setup Guide
 
 ### 1️⃣ Clone the Repository
 
-git clone https://github.com/Vrutipatel-engineer/Smart-Timetable-AI.git  
-cd Smart-Timetable-AI  
+git clone https://github.com/Vrutipatel-engineer/Smart-Timetable-AI.git
+cd Smart-Timetable-AI
 
 ---
 
-### 2️⃣ Install Required Packages
+### 2️⃣ Install Dependencies
 
-pip install -r requirements.txt  
-
-If requirements.txt is not available:
-
-pip install streamlit google-auth google-auth-oauthlib google-auth-httplib2 google-api-python-client  
+pip install -r requirements.txt
 
 ---
 
-### 3️⃣ Google Cloud Setup
+### 3️⃣ Setup Environment Variable
 
-1. Open Google Cloud Console  
-2. Create a New Project  
-3. Enable Google Calendar API  
-4. Configure OAuth Consent Screen  
-5. Create OAuth Client ID (Desktop App)  
-6. Download credentials.json  
-7. Place credentials.json inside project root folder  
+Create a `.env` file:
+
+GROQ_API_KEY=your_api_key_here
 
 ---
 
-### 4️⃣ Run the Application
+### 4️⃣ Google Cloud Setup
 
-streamlit run main.py  
-
-- First time login will open browser for Google authentication  
-- After login, token.json will be generated locally  
-- token.json is not uploaded to GitHub  
-
----
-
-## 📌 Current Features
-
-- Create Google Calendar Events  
-- Validate Event Time  
-- View Upcoming Events  
-- Secure OAuth Login  
+1. Enable Google Calendar API
+2. Create OAuth credentials
+3. Download `credentials.json`
+4. Place it in project root
 
 ---
 
-## 🎯 Future Improvements
+### 5️⃣ Run the App
 
-- Smart Conflict Detection  
-- AI-based Slot Suggestions  
-- Timetable Optimization  
-- Cloud Deployment  
-
----
-
-## 👩‍💻 Project Status
-
-Smart Timetable AI Agent – Week 1 Completed Successfully
+streamlit run main.py
