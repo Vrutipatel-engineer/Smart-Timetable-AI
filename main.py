@@ -2,16 +2,14 @@ import streamlit as st
 from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build
-from dotenv import load_dotenv
 import os
 from datetime import datetime, timedelta
 import pandas as pd
 from zoneinfo import ZoneInfo
+import json
 from groq import Groq
 import json
-import time
 
-load_dotenv()
 
 SCOPES = ['https://www.googleapis.com/auth/calendar']
 
@@ -60,30 +58,18 @@ if not api_key:
 
 client = Groq(api_key=api_key)
 
-import time
 
 def ask_groq(prompt):
 
-    for i in range(3):  # 🔁 retry 3 times
-        try:
-            response = client.chat.completions.create(
-                model="mixtral-8x7b-32768",
-                messages=[
-                    {"role": "system", "content": "Return ONLY JSON."},
-                    {"role": "user", "content": prompt}
-                ],
-                timeout=10  # 🔥 timeout set
-            )
+    response = client.chat.completions.create(
+        model="llama-3.1-8b-instant",
+        messages=[
+            {"role": "system", "content": "You are a calendar assistant. Return ONLY JSON."},
+            {"role": "user", "content": prompt}
+        ]
+    )
 
-            return response.choices[0].message.content
-
-        except Exception as e:
-            print("Retrying...", e)
-            time.sleep(2)
-
-    return '{"action": "error"}'
-
-    
+    return response.choices[0].message.content
 
 def parse_user_input(user_input):
 
@@ -92,35 +78,31 @@ def parse_user_input(user_input):
     prompt = f"""
     Today date is {today}
 
-    Convert user input into JSON.
+    Convert the user input into STRICT JSON.
 
     Rules:
-    - Support MULTIPLE actions
-    - Return actions as array
-    - date in YYYY-MM-DD
-    - time in HH:MM 24hr format
-    - ONLY JSON, no text
-
-    Possible actions:
-    - create_event
-    - find_free_slot
-    - get_events
+    - date MUST be in YYYY-MM-DD format
+    - If user says "24 march", assume current year
+    - Convert AM/PM to 24 hour format
+    - Do NOT return anything except JSON
+    - No explanation, no text
 
     Example:
-    Input: "add meeting tomorrow at 5 pm and show free slots"
+    Input: "add meeting on 24 march at 9 am to 11 am"
 
     Output:
     {{
-      "actions": ["create_event", "find_free_slot"],
-      "title": "meeting",
-      "date": "2026-03-23",
-      "start_time": "17:00",
-      "end_time": "18:00"
+        "action": "create_event",
+        "title": "meeting",
+        "date": "2026-03-24",
+        "start_time": "09:00",
+        "end_time": "11:00"
     }}
 
     Now convert:
+
     "{user_input}"
-    
+    """
 
     return ask_groq(prompt)
 
@@ -281,9 +263,7 @@ if user_input:
 
     else:
 
-        actions = data.get("actions", [])
-
-        if "create_event" in actions:
+        if data["action"] == "create_event":
 
             try:
                 title = data["title"] if data["title"] else "Untitled Event"
@@ -363,41 +343,6 @@ if user_input:
 
         else:
             response = "❌ Unknown action"
-            
-        
-        # 🔥 FREE SLOT ALSO
-        if "find_free_slot" in actions:
-
-            try:
-                date = datetime.strptime(data["date"], "%Y-%m-%d").date()
-                start_hour, start_min = map(int, data["start_time"].split(":"))
-                end_hour, end_min = map(int, data["end_time"].split(":"))
-
-                start_dt = datetime.combine(date, datetime.min.time()).replace(
-                    hour=start_hour,
-                    minute=start_min,
-                    tzinfo=ZoneInfo("Asia/Kolkata")
-                )
-
-                end_dt = datetime.combine(date, datetime.min.time()).replace(
-                    hour=end_hour,
-                    minute=end_min,
-                    tzinfo=ZoneInfo("Asia/Kolkata")
-                )
-
-                suggestions = suggest_free_slot(date, end_dt - start_dt)
-
-            except:
-                # fallback default duration (1 hour)
-                date = datetime.now().date()
-                duration = timedelta(hours=1)
-
-                suggestions = suggest_free_slot(date, duration)
-
-            if suggestions:
-                response += "\n\n💡 Free slots:\n"
-                for s in suggestions[:3]:
-                    response += f"👉 {s[0].strftime('%I:%M %p')} - {s[1].strftime('%I:%M %p')}\n"
 
     # =========================
     # 🤖 RESPONSE SHOW
