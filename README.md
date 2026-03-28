@@ -14,6 +14,9 @@ An AI-powered smart scheduling assistant built using Streamlit and Google Calend
 ✔ Confirmation System (Yes/No)
 ✔ Email & Popup Reminders
 ✔ Class Schedule Management
+✔ Assignment Deadline Tracker
+✔ Course Scheduling
+✔ Semester/Term Schedule
 
 ---
 
