@@ -1,641 +1,343 @@
 import streamlit as st
-from google.oauth2.credentials import Credentials
-from google_auth_oauthlib.flow import InstalledAppFlow
-from googleapiclient.discovery import build
 import os
 from datetime import datetime, timedelta
 import pandas as pd
-from zoneinfo import ZoneInfo
-import json
-from groq import Groq
 import json
 
-
-SCOPES = ['https://www.googleapis.com/auth/calendar']
-
-# ---------- AUTH ----------
-
-creds = None
-
-# 1️⃣ Agar Streamlit Cloud secrets me token hai
-if "google_token" in st.secrets:
-
-    creds = Credentials(
-        token=st.secrets["google_token"]["token"],
-        refresh_token=st.secrets["google_token"]["refresh_token"],
-        token_uri=st.secrets["google_token"]["token_uri"],
-        client_id=st.secrets["google_token"]["client_id"],
-        client_secret=st.secrets["google_token"]["client_secret"],
-        scopes=SCOPES,
-    )
-
-# 2️⃣ Agar local machine me token.json hai
-elif os.path.exists("token.json"):
-
-    creds = Credentials.from_authorized_user_file("token.json", SCOPES)
-
-# 3️⃣ Agar login first time ho raha hai
-else:
-
-    flow = InstalledAppFlow.from_client_config(
-        st.secrets["credentials"], SCOPES
-    )
-
-    creds = flow.run_local_server(port=0)
-
-    with open("token.json", "w") as token:
-        token.write(creds.to_json())
-
-
-# ---------- GOOGLE CALENDAR SERVICE ----------
-
-service = build("calendar", "v3", credentials=creds)
-
-api_key = os.getenv("GROQ_API_KEY")
-
-if not api_key:
-    api_key = st.secrets["GROQ_API_KEY"]
-
-client = Groq(api_key=api_key)
-
-
-def ask_groq(prompt):
-
-    response = client.chat.completions.create(
-        model="llama-3.1-8b-instant",
-        messages=[
-            {"role": "system", "content": "You are a calendar assistant. Return ONLY JSON."},
-            {"role": "user", "content": prompt}
-        ]
-    )
-
-    return response.choices[0].message.content
-
-def parse_user_input(user_input):
-
-    today = datetime.now().strftime("%Y-%m-%d")
-
-    prompt = f"""
-    Today date is {today}
-
-    Convert the user input into STRICT JSON.
-
-    Rules:
-    - date MUST be in YYYY-MM-DD format
-    - If user says "24 march", assume current year
-    - Convert AM/PM to 24 hour format
-    - Do NOT return anything except JSON
-    - No explanation, no text
-
-    Example:
-    Input: "add meeting on 24 march at 9 am to 11 am"
-
-    Output:
-    {{
-        "action": "create_event",
-        "title": "meeting",
-        "date": "2026-03-24",
-        "start_time": "09:00",
-        "end_time": "11:00"
-    }}
-
-    Now convert:
-
-    "{user_input}"
-    """
-
-    return ask_groq(prompt)
-
-
-# ==================================================
-# FUNCTION → FIND FREE SLOT
-# ==================================================
-
-def suggest_free_slot(date, duration):
-
-    start_day = datetime.combine(date, datetime.min.time()).astimezone()
-    end_day = start_day + timedelta(days=1)
-
-    events_result = service.events().list(
-        calendarId='primary',
-        timeMin=start_day.isoformat(),
-        timeMax=end_day.isoformat(),
-        singleEvents=True,
-        orderBy='startTime'
-    ).execute()
-
-    events = events_result.get('items', [])
-
-    suggestions = []
-    last_end = start_day
-
-    for event in events:
-
-        start = datetime.fromisoformat(
-            event['start'].get('dateTime', event['start'].get('date'))
-        )
-
-        end = datetime.fromisoformat(
-            event['end'].get('dateTime', event['end'].get('date'))
-        )
-
-        gap = start - last_end
-
-        if gap >= duration:
-            suggestions.append((last_end, last_end + duration))
-
-        last_end = max(last_end, end)
-
-    gap = end_day - last_end
-
-    if gap >= duration:
-        suggestions.append((last_end, last_end + duration))
-
-    return suggestions
-
-
-
-st.header("🤖 AI Scheduler")
-
-# chat history
-if "messages" not in st.session_state:
-    st.session_state.messages = []
-
-for msg in st.session_state.messages:
-    with st.chat_message(msg["role"]):
-        st.write(msg["content"])
-
-user_input = st.chat_input("Type your request...")
-
-if user_input:
-
-    # show user
-    st.session_state.messages.append({
-        "role": "user",
-        "content": user_input
-    })
-
-    with st.chat_message("user"):
-        st.write(user_input)
-
-    # =========================
-    # ✅ YES HANDLE
-    # =========================
-    if user_input.lower() in ["yes", "ok", "haan"]:
-
-        slot = st.session_state.get("pending_slot")
-        title = st.session_state.get("pending_title", "Event")
-
-        if slot:
-            start_dt, end_dt = slot
-
-            event = {
-                'summary': title,
-                'start': {
-                    'dateTime': start_dt.isoformat(),
-                    'timeZone': 'Asia/Kolkata',
-                },
-                'end': {
-                    'dateTime': end_dt.isoformat(),
-                    'timeZone': 'Asia/Kolkata',
-                },
-            }
-
-            service.events().insert(
-                calendarId='primary',
-                body=event
-            ).execute()
-
-            response = f"✅ Event '{title}' scheduled successfully!"
-
-            st.session_state["pending_slot"] = None
-            st.session_state["pending_title"] = None
-
-        else:
-            response = "❌ Koi pending slot nahi hai"
-
-        st.session_state.messages.append({
-            "role": "assistant",
-            "content": response
-        })
-
-        with st.chat_message("assistant"):
-            st.write(response)
-
-        st.stop()
-
-    # =========================
-    # ❌ NO HANDLE
-    # =========================
-    if user_input.lower() in ["no", "nahi"]:
-
-        st.session_state["pending_slot"] = None
-        st.session_state["pending_title"] = None
-
-        response = "👍 Theek hai, koi aur time try karo!"
-
-        st.session_state.messages.append({
-            "role": "assistant",
-            "content": response
-        })
-
-        with st.chat_message("assistant"):
-            st.write(response)
-
-        st.stop()
-
-    # =========================
-    # 🤖 AI → JSON
-    # =========================
-    raw = parse_user_input(user_input)
-
-    raw = raw.strip()
-    if "```" in raw:
-        raw = raw.split("```")[1]
-
-    raw = raw.replace("json", "").replace("\n", "").strip()
-
-    try:
-        data = json.loads(raw)
-    except:
-        st.write("AI raw output:", raw)
-        response = "❌ Samajh nahi aaya 😬"
-
-    else:
-
-        if data["action"] == "create_event":
-
-            try:
-                title = data["title"] if data["title"] else "Untitled Event"
-                date = datetime.strptime(data["date"], "%Y-%m-%d").date()
-
-                start_hour, start_min = map(int, data["start_time"].split(":"))
-                end_hour, end_min = map(int, data["end_time"].split(":"))
-
-                start_dt = datetime.combine(date, datetime.min.time()).replace(
-                    hour=start_hour,
-                    minute=start_min,
-                    tzinfo=ZoneInfo("Asia/Kolkata")
-                )
-
-                end_dt = datetime.combine(date, datetime.min.time()).replace(
-                    hour=end_hour,
-                    minute=end_min,
-                    tzinfo=ZoneInfo("Asia/Kolkata")
-                )
-
-                event = {
-                    'summary': title,
-                    'start': {
-                        'dateTime': start_dt.isoformat(),
-                        'timeZone': 'Asia/Kolkata',
-                    },
-                    'end': {
-                        'dateTime': end_dt.isoformat(),
-                        'timeZone': 'Asia/Kolkata',
-                    },
-                    'reminders': {
-                        'useDefault': False,
-                        'overrides': [
-                            {'method': 'email', 'minutes': 30},
-                            {'method': 'popup', 'minutes': 10},
-                        ],
-                    },
-                }
-
-                # =========================
-                # ⚠️ CONFLICT CHECK
-                # =========================
-                events_result = service.events().list(
-                    calendarId='primary',
-                    timeMin=start_dt.isoformat(),
-                    timeMax=end_dt.isoformat(),
-                    singleEvents=True
-                ).execute()
-
-                events = events_result.get('items', [])
-
-                if events:
-
-                    response = "⚠️ Time conflict hai!\n\n"
-
-                    suggestions = suggest_free_slot(date, end_dt - start_dt)
-
-                    if suggestions:
-                        st.session_state["pending_slot"] = suggestions[0]
-                        st.session_state["pending_title"] = title
-
-                        response += f"👉 {suggestions[0][0].strftime('%I:%M %p')} - {suggestions[0][1].strftime('%I:%M %p')}"
-                        response += "\n\n❓ Isko schedule kar du? (yes/no)"
-                    else:
-                        response += "❌ No free slots available"
-
-                else:
-                    service.events().insert(
-                        calendarId='primary',
-                        body=event
-                    ).execute()
-
-                    response = f"✅ Event '{title}' created!"
-
-            except Exception as e:
-                response = f"❌ Error: {str(e)}"
-
-        else:
-            response = "❌ Unknown action"
-
-    # =========================
-    # 🤖 RESPONSE SHOW
-    # =========================
-    st.session_state.messages.append({
-        "role": "assistant",
-        "content": response
-    })
-
-    with st.chat_message("assistant"):
-        st.write(response)
-
-
-# ==================================================
-# CLASS SCHEDULE STORAGE
-# ==================================================
-
-def load_schedule():
-
-    if os.path.exists("schedule.json"):
-        with open("schedule.json", "r") as f:
+# ---------------- STORAGE ----------------
+FILE = "events.json"
+
+def load_events():
+    if os.path.exists(FILE):
+        with open(FILE, "r") as f:
             return json.load(f)
-
     return []
 
-
-def save_schedule(data):
-
-    with open("schedule.json", "w") as f:
+def save_events(data):
+    with open(FILE, "w") as f:
         json.dump(data, f, indent=4)
 
+# ---------------- SIMPLE PARSER (NO AI) ----------------
+def parse_input(user_input):
+    try:
+        words = user_input.lower().split()
 
-# ==================================================
-# FUNCTION → GET EVENTS
-# ==================================================
+        title = words[0] if words else "event"
+        date = datetime.now().strftime("%Y-%m-%d")
 
-def get_events():
-    now = datetime.now().astimezone().isoformat()
+        start = "10:00"
+        end = "11:00"
 
-    result = service.events().list(
-        calendarId='primary',
-        timeMin=now,
-        maxResults=20,
-        singleEvents=True,
-        orderBy='startTime'
-    ).execute()
+        for i, w in enumerate(words):
+            if w.isdigit() and i+2 < len(words):
+                start = f"{int(w):02}:00"
+                end = f"{int(words[i+2]):02}:00"
+                break
 
-    return result.get('items', [])
+        return {
+            "title": title,
+            "date": date,
+            "start": start,
+            "end": end
+        }
 
-# ==================================================
-# TIME CONVERSION FUNCTION
-# ==================================================
+    except:
+        return None
 
-def convert_to_24(hour, minute, ampm):
+# ---------------- CONFLICT CHECK ----------------
+def check_conflict(events, new_start, new_end):
+    for e in events:
+        e_start = datetime.fromisoformat(e["start"])
+        e_end = datetime.fromisoformat(e["end"])
 
-    if ampm == "PM" and hour != 12:
-        hour += 12
+        if new_start < e_end and new_end > e_start:
+            return True
+    return False
 
-    if ampm == "AM" and hour == 12:
-        hour = 0
+def suggest_time(events, duration):
+    now = datetime.now().replace(hour=9, minute=0)
 
-    return hour, minute
+    for i in range(8):
+        start = now + timedelta(hours=i)
+        end = start + duration
 
-# ==================================================
-# CREATE EVENT
-# ==================================================
+        if not check_conflict(events, start, end):
+            return start, end
 
-st.header("➕ Create Event")
+    return None, None
 
-title = st.text_input("Event Title")
-date = st.date_input("Select Date")
+# ---------------- UI ----------------
+st.title("🤖 Smart Scheduler (No AI Mode)")
 
-st.markdown("**Start Time**")
+events = load_events()
 
-col1, col2, col3 = st.columns(3)
+# ---------------- CHAT ----------------
+st.subheader("💬 Quick Add (Type like: meeting 10 to 11)")
 
-start_hour = col1.selectbox("Hour", list(range(1,13)), key="start_hour")
-start_min = col2.selectbox("Minute", [f"{i:02}" for i in range(60)], key="start_min")
-start_ampm = col3.selectbox("AM/PM", ["AM","PM"], key="start_ampm")
+user_input = st.text_input("Enter request")
 
-st.markdown("**End Time**")
+if st.button("Add via Text"):
 
-col4, col5, col6 = st.columns(3)
+    data = parse_input(user_input)
 
-end_hour = col4.selectbox("Hour", list(range(1,13)), key="end_hour")
-end_min = col5.selectbox("Minute", [f"{i:02}" for i in range(60)], key="end_min")
-end_ampm = col6.selectbox("AM/PM", ["AM","PM"], key="end_ampm")
+    if not data:
+        st.error("❌ Could not understand input")
+
+    else:
+        title = data["title"]
+        date = data["date"]
+
+        start_dt = datetime.fromisoformat(f"{date}T{data['start']}")
+        end_dt = datetime.fromisoformat(f"{date}T{data['end']}")
+
+        if check_conflict(events, start_dt, end_dt):
+            st.warning("⚠ Time conflict!")
+
+            new_start, new_end = suggest_time(events, end_dt - start_dt)
+
+            if new_start:
+                st.info(f"👉 Try: {new_start.strftime('%I:%M %p')} - {new_end.strftime('%I:%M %p')}")
+            else:
+                st.error("No free slot found")
+
+        else:
+            events.append({
+                "title": title,
+                "start": start_dt.isoformat(),
+                "end": end_dt.isoformat()
+            })
+
+            save_events(events)
+            st.success(f"✅ Event '{title}' added!")
+
+# ---------------- MANUAL ADD ----------------
+st.subheader("➕ Add Event Manually")
+
+title = st.text_input("Title", key="manual_title")
+date = st.date_input("Date")
+
+start = st.time_input("Start Time")
+end = st.time_input("End Time")
 
 if st.button("Add Event"):
 
-    start_hour24, start_min = convert_to_24(start_hour, int(start_min), start_ampm)
-    end_hour24, end_min = convert_to_24(end_hour, int(end_min), end_ampm)
-
-    start_datetime = datetime.combine(
-        date,
-        datetime.min.time()
-    ).replace(
-        hour=start_hour24,
-        minute=start_min,
-        tzinfo=ZoneInfo("Asia/Kolkata")
-    )
-
-    end_datetime = datetime.combine(
-        date,
-        datetime.min.time()
-    ).replace(
-        hour=end_hour24,
-        minute=end_min,
-        tzinfo=ZoneInfo("Asia/Kolkata")
-    )
+    start_dt = datetime.combine(date, start)
+    end_dt = datetime.combine(date, end)
 
     if not title:
-        st.error("Enter event title")
-        st.stop()
+        st.error("Enter title")
 
-    elif end_datetime <= start_datetime:
-        st.error("End time must be after start time")
-        st.stop()
+    elif end_dt <= start_dt:
+        st.error("End must be after start")
 
-    # Check class schedule conflict
-    schedule = load_schedule()
-
-    event_day = date.strftime("%A")
-
-    for c in schedule:
-
-        if c["day"] == event_day:
-
-            class_start = datetime.strptime(c["start"], "%H:%M").time()
-            class_end = datetime.strptime(c["end"], "%H:%M").time()
-
-            event_start = start_datetime.time()
-            event_end = end_datetime.time()
-
-            if event_start < class_end and event_end > class_start:
-
-                st.error(f"❌ Conflict with class: {c['subject']}")
-                st.stop()
-
-
-    # Calendar conflict check
-    events_result = service.events().list(
-        calendarId='primary',
-        timeMin=start_datetime.isoformat(),
-        timeMax=end_datetime.isoformat(),
-        singleEvents=True
-    ).execute()
-
-    events = events_result.get('items', [])
-
-    if events:
-
-        st.warning("⚠ Time conflict detected")
-
-        required_duration = end_datetime - start_datetime
-        suggestions = suggest_free_slot(date, required_duration)
-
-        if suggestions:
-
-            st.info("Suggested Free Slots:")
-
-            for slot in suggestions[:3]:
-
-                start = slot[0].strftime("%I:%M %p")
-                end = slot[1].strftime("%I:%M %p")
-
-                st.write(f"🟢 {start} - {end}")
+    elif check_conflict(events, start_dt, end_dt):
+        st.warning("⚠ Conflict detected")
 
     else:
+        events.append({
+            "title": title,
+            "start": start_dt.isoformat(),
+            "end": end_dt.isoformat()
+        })
+        save_events(events)
+        st.success("Event added")
 
-        event = {
-            'summary': title,
-            'start': {
-                'dateTime': start_datetime.isoformat(),
-                'timeZone': 'Asia/Kolkata',
-            },
-            'end': {
-                'dateTime': end_datetime.isoformat(),
-                'timeZone': 'Asia/Kolkata',
-            },
-        }
+# ---------------- SHOW EVENTS ----------------
+st.subheader("📋 Your Events")
 
-        service.events().insert(
-            calendarId='primary',
-            body=event
-        ).execute()
+if events:
+    df = pd.DataFrame(events)
+    df["start"] = pd.to_datetime(df["start"]).dt.strftime("%d %b %I:%M %p")
+    df["end"] = pd.to_datetime(df["end"]).dt.strftime("%d %b %I:%M %p")
 
-        st.success("✅ Event Created Successfully!")
+    st.table(df)
 
+    # DELETE
+    st.subheader("❌ Delete Event")
+    names = [e["title"] for e in events]
+
+    selected = st.selectbox("Select Event", names)
+
+    if st.button("Delete"):
+        events = [e for e in events if e["title"] != selected]
+        save_events(events)
+        st.success("Deleted")
         st.rerun()
 
-# ==================================================
-# CLASS SCHEDULE MANAGEMENT
+else:
+    st.info("No events yet")
+    # ==================================================
+# 📌 ASSIGNMENT DEADLINE TRACKER
 # ==================================================
 
-st.header("📚 Class Schedule Management")
+from datetime import date
 
-schedule = load_schedule()
+st.header("📌 Assignment Deadline Tracker")
+
+# Initialize session state
+if "assignments" not in st.session_state:
+    st.session_state.assignments = []
+
+# ---------------- ADD ASSIGNMENT ----------------
+st.subheader("➕ Add Assignment")
+
+name = st.text_input("Assignment Name", key="assign_name")
+deadline = st.date_input("Select Deadline", key="assign_deadline")
+priority = st.selectbox("Priority", ["High", "Medium", "Low"], key="assign_priority")
+
+if st.button("Add Assignment"):
+    if name:
+        st.session_state.assignments.append({
+            "name": name,
+            "deadline": deadline,
+            "priority": priority
+        })
+        st.success("Assignment Added ✅")
+    else:
+        st.error("Enter assignment name")
+
+# ---------------- SHOW ASSIGNMENTS ----------------
+st.subheader("📋 Your Assignments")
+
+today = date.today()
+
+if st.session_state.assignments:
+
+    for i, task in enumerate(st.session_state.assignments):
+
+        days_left = (task["deadline"] - today).days
+
+        if days_left < 0:
+            status = "❌ Overdue"
+        elif days_left == 0:
+            status = "⚠ Due Today"
+        else:
+            status = f"⏳ {days_left} days left"
+
+        col1, col2 = st.columns([4,1])
+
+        with col1:
+            st.write(f"**{task['name']}** | {task['priority']} | {status}")
+
+        with col2:
+            if st.button("❌ Delete", key=f"del_{i}"):
+                st.session_state.assignments.pop(i)
+                st.rerun()
+
+else:
+    st.info("No assignments yet")
+
+# ---------------- CLEAR ALL ----------------
+if st.button("🗑 Clear All Assignments"):
+    st.session_state.assignments = []
+    st.success("All assignments cleared ✅")
+
+
+   
+
+# ==================================================
+# 🎓 SEMESTER / TERM TEMPLATE
+# ==================================================
+
+st.header("🎓 Semester / Term Schedule")
+
+# initialize FIRST (important)
+if "courses" not in st.session_state:
+    st.session_state.courses = []
+
+semester_templates = {
+    "Semester 1": [
+        {"subject": "Maths", "type": "Lecture", "day": "Monday", "start": "10:00", "end": "11:00"},
+        {"subject": "Physics", "type": "Lecture", "day": "Tuesday", "start": "11:00", "end": "12:00"},
+        {"subject": "Chemistry Lab", "type": "Lab", "day": "Wednesday", "start": "13:00", "end": "15:00"},
+    ],
+    "Semester 2": [
+        {"subject": "DBMS", "type": "Lecture", "day": "Monday", "start": "09:00", "end": "10:00"},
+        {"subject": "Java", "type": "Lecture", "day": "Tuesday", "start": "10:00", "end": "11:00"},
+        {"subject": "OS Lab", "type": "Lab", "day": "Friday", "start": "14:00", "end": "16:00"},
+    ],
+    "Term 1": [
+        {"subject": "English", "type": "Lecture", "day": "Monday", "start": "09:00", "end": "10:00"},
+        {"subject": "Economics", "type": "Lecture", "day": "Wednesday", "start": "11:00", "end": "12:00"},
+    ]
+}
+
+selected_sem = st.selectbox(
+    "Select Semester/Term",
+    list(semester_templates.keys()),
+    key="sem_select"
+)
+
+if st.button("Load Template", key="load_template_btn"):
+
+    st.session_state.courses = semester_templates[selected_sem].copy()
+
+    st.success(f"{selected_sem} loaded successfully ✅")
+
+
+# ==================================================
+# 📚 COURSE SCHEDULING + DISPLAY
+# ==================================================
+
+st.header("📚 Course Schedule")
+
+# ---------------- ADD COURSE ----------------
+st.subheader("➕ Add Course")
+
+subject = st.text_input("Subject Name", key="course_subject")
+
+course_type = st.selectbox(
+    "Type",
+    ["Lecture", "Lab", "Tutorial"],
+    key="course_type"
+)
 
 day = st.selectbox(
     "Day",
-    ["Monday","Tuesday","Wednesday","Thursday","Friday","Saturday","Sunday"]
+    ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"],
+    key="course_day"
 )
 
-subject = st.text_input("Subject")
+col1, col2 = st.columns(2)
 
-colA, colB = st.columns(2)
+start_time = col1.time_input("Start Time", key="course_start")
+end_time = col2.time_input("End Time", key="course_end")
 
-class_start = colA.time_input("Class Start Time")
-class_end = colB.time_input("Class End Time")
+if st.button("Add Course", key="add_course_btn"):
 
-if st.button("Add Class"):
+    if subject and end_time > start_time:
 
-    new_class = {
-        "day": day,
-        "subject": subject,
-        "start": class_start.strftime("%H:%M"),
-        "end": class_end.strftime("%H:%M")
+        st.session_state.courses.append({
+            "subject": subject,
+            "type": course_type,
+            "day": day,
+            "start": start_time.strftime("%H:%M"),
+            "end": end_time.strftime("%H:%M")
+        })
+
+        st.success("Course added ✅")
+
+    else:
+        st.error("Invalid input")
+
+
+# ---------------- SHOW TIMETABLE ----------------
+st.subheader("📅 Weekly Timetable")
+
+if st.session_state.courses:
+
+    df = pd.DataFrame(st.session_state.courses)
+
+    day_order = {
+        "Monday": 1, "Tuesday": 2, "Wednesday": 3,
+        "Thursday": 4, "Friday": 5, "Saturday": 6
     }
 
-    schedule.append(new_class)
+    df["order"] = df["day"].map(day_order)
 
-    save_schedule(schedule)
+    df = df.sort_values(by=["order", "start"]).drop(columns=["order"])
 
-    st.success("Class added successfully")
-
-if schedule:
-
-    st.subheader("Weekly Classes")
-
-    class_data = []
-
-    for c in schedule:
-
-        class_data.append({
-            "Day": c["day"],
-            "Subject": c["subject"],
-            "Start": c["start"],
-            "End": c["end"]
-        })
-
-    st.table(pd.DataFrame(class_data))
-
-
-# ==================================================
-# SHOW EVENTS
-# ==================================================
-
-st.header("📋 Upcoming Events")
-
-events = get_events()
-
-if not events:
-    st.write("No events found")
+    st.dataframe(df, use_container_width=True)
 
 else:
-
-    data = []
-
-    for event in events:
-
-        start = datetime.fromisoformat(event['start']['dateTime'])
-        end = datetime.fromisoformat(event['end']['dateTime'])
-
-        data.append({
-            "Event": event['summary'],
-            "Date": start.strftime("%d %b %Y"),
-            "Start": start.strftime("%I:%M %p"),
-            "End": end.strftime("%I:%M %p"),
-            "ID": event['id']
-        })
-
-    df = pd.DataFrame(data)
-
-    st.table(df[["Event", "Date", "Start", "End"]])
-
-    st.subheader("❌ Delete Event")
-
-    event_to_delete = st.selectbox(
-        "Select event",
-        df["Event"],
-        key="delete_event"
-    )
-
-    if st.button("Delete Event"):
-
-        event_id = df[df["Event"] == event_to_delete]["ID"].values[0]
-
-        service.events().delete(
-            calendarId='primary',
-            eventId=event_id
-        ).execute()
-
-        st.success("Event deleted")
-
-        st.rerun()
+    st.warning("⚠ No courses to display")
