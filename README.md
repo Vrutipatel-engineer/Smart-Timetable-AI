@@ -17,6 +17,8 @@ An AI-powered smart scheduling assistant built using Streamlit and Google Calend
 ✔ Assignment Deadline Tracker
 ✔ Course Scheduling
 ✔ Semester/Term Schedule
+✔ Exam Planner
+✔ Indian holidays
 
 ---
 
