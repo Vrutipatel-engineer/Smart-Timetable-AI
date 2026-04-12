@@ -19,7 +19,12 @@ An AI-powered smart scheduling assistant built using Streamlit and Google Calend
 ✔ Semester/Term Schedule
 ✔ Exam Planner
 ✔ Indian holidays
+## 🚀 Latest Updates
 
+- Added a **Navigation Bar (Navbar)** for better UI navigation
+- Improved overall UI structure and user experience
+- Fixed previous UI issues and layout bugs
+- Integrated all existing features into a clean interface
 ---
 
 ## 🛠️ Tech Stack
