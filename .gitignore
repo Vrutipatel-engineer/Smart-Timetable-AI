@@ -1,0 +1,15 @@
+# ─── Secret files (contain API keys & tokens) ───
+.env.local
+
+# ─── Dependencies (too large, auto-installed via npm install) ───
+node_modules/
+
+# ─── Next.js build output (auto-generated) ───
+.next/
+
+# ─── System files ───
+Thumbs.db
+.DS_Store
+
+# ─── Lock file (optional — remove this line if you want to push it) ───
+# package-lock.json
