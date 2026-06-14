@@ -1,7 +1,7 @@
 # 🎓 Smart Timetable & Study Planner
 
 An AI-powered academic scheduling system built with **Next.js** that intelligently manages class timetables, exam preparation, assignment tracking, and study sessions with external calendar API integration.
-
+link: https://smart-timetable-ai.vercel.app/
 ---
 
 ## ✨ Features
